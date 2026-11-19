@@ -1,2 +1,2 @@
-# MoyaVPN
+# Moya
 Android VPN Client 
