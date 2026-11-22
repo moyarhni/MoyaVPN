@@ -1,0 +1,69 @@
+name: Build APK from zip
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack source zip
+        run: |
+          mkdir build-src
+          unzip -q MoYaVPN-v0.7-source.zip -d build-src
+          ls build-src
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Fetch pinned libv2ray AAR and verify SHA-256
+        working-directory: build-src
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o app/libs/libv2ray.aar \
+            https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.11.9/libv2ray.aar
+          sha256sum -c app/libs/libv2ray.aar.sha256
+
+      - name: Tests and debug APK
+        working-directory: build-src
+        run: |
+          set -o pipefail
+          gradle :core:testDebugUnitTest :app:assembleDebug --continue --stacktrace 2>&1 | tee ../build.log
+
+      - name: Short error summary
+        if: always()
+        run: |
+          {
+            echo "### Errors (copy this and send it)"
+            echo '```'
+            grep -E "^e: |error:|FAILED|What went wrong|BUILD (SUCCESSFUL|FAILED)|sha256|checksum" -A2 build.log | head -150 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moyavpn-debug-apk
+          path: build-src/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
